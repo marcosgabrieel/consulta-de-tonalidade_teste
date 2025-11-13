@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Consulta de Tonalidade - Jovens</title>
+    <!-- Carrega o Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Adiciona uma transição suave para os modais */
+        .modal {
+            transition: opacity 0.25s ease, visibility 0.25s ease;
+        }
+        /* Classe auxiliar para esconder/mostrar */
+        .modal.hidden {
+            visibility: hidden;
+            opacity: 0;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans antialiased">
+
+    <!-- Container Principal -->
+    <div class="container mx-auto max-w-3xl p-4 md:p-8">
+        
+        <header class="text-center mb-8">
+            <h1 class="text-3xl md:text-4xl font-bold text-gray-800">
+                Consulta de Tonalidade - Jovens
+            </h1>
+        </header>
+
+        <main class="bg-white p-6 md:p-8 rounded-lg shadow-lg">
+            
+            <!-- Área de Busca e Adição -->
+            <div class="flex flex-col sm:flex-row gap-4 mb-6">
+                <input 
+                    type="search" 
+                    id="searchBox" 
+                    placeholder="Buscar por nome do hino..." 
+                    class="flex-grow p-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                <button 
+                    id="addButton" 
+                    class="w-full sm:w-auto p-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition duration-200 shadow-md"
+                >
+                    Adicionar Hino
+                </button>
+            </div>
+
+            <!-- Lista de Hinos -->
+            <div id="hymnList" class="space-y-4">
+                <!-- Hinos serão injetados aqui pelo JavaScript -->
+                <p id="loadingMessage" class="text-center text-gray-500">Carregando hinos...</p>
+            </div>
+
+        </main>
+    </div>
+
+    <!-- Modal: Adicionar/Editar Hino -->
+    <div id="addEditModal" class="modal hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div class="bg-white p-6 rounded-lg shadow-xl w-full max-w-md">
+            <h2 id="modalTitle" class="text-2xl font-bold mb-6 text-gray-800">Adicionar Novo Hino</h2>
+            <form id="addEditForm">
+                <div>
+                    <label for="hymnName" class="block text-sm font-medium text-gray-700 mb-1">Nome do Hino</label>
+                    <input 
+                        type="text" 
+                        id="hymnName" 
+                        required 
+                        class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                </div>
+                <div class="mt-4">
+                    <label for="hymnTone" class="block text-sm font-medium text-gray-700 mb-1">Tonalidade</label>
+                    <input 
+                        type="text" 
+                        id="hymnTone" 
+                        required 
+                        class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                </div>
+                
+                <div class="flex justify-end gap-4 mt-6">
+                    <button 
+                        type="button" 
+                        id="addEditCancelButton" 
+                        class="px-5 py-2 bg-gray-300 text-gray-800 rounded-lg font-medium hover:bg-gray-400 transition"
+                    >
+                        Cancelar
+                    </button>
+                    <button 
+                        type="submit" 
+                        class="px-5 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition"
+                    >
+                        Salvar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Confirmação (Genérico para Editar e Excluir) -->
+    <div id="confirmModal" class="modal hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-40">
+        <div class="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm">
+            <h2 class="text-xl font-bold mb-4 text-gray-800">Confirmação</h2>
+            <p id="confirmMessage" class="text-gray-700 mb-6">Você tem certeza?</p>
+            <div class="flex justify-end gap-4">
+                <button 
+                    id="confirmCancelButton" 
+                    class="px-5 py-2 bg-gray-300 text-gray-800 rounded-lg font-medium hover:bg-gray-400 transition"
+                >
+                    Cancelar
+                </button>
+                <button 
+                    id="confirmButton" 
+                    class="px-5 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition"
+                >
+                    Confirmar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase Scripts -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { 
+            getAuth, 
+            signInAnonymously, 
+            signInWithCustomToken, 
+            onAuthStateChanged 
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { 
+            getFirestore, 
+            doc, 
+            collection, 
+            addDoc, 
+            setDoc, 
+            deleteDoc, 
+            onSnapshot,
+            setLogLevel
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- Configuração do Firebase ---
+        
+        // Pega a configuração do Firebase e o ID do App do ambiente
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        // Inicializa o Firebase
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        setLogLevel('Debug'); // Habilita logs do Firestore no console
+
+        let userId = null;
+        let hymnsCollectionRef = null;
+        let allHymns = []; // Array local para guardar todos os hinos
+        let currentHymn = null; // Guarda o hino a ser editado/excluído
+        let currentAction = null; // 'edit' ou 'delete'
+
+        // --- Referências do DOM ---
+        const searchBox = document.getElementById('searchBox');
+        const addButton = document.getElementById('addButton');
+        const hymnList = document.getElementById('hymnList');
+        const loadingMessage = document.getElementById('loadingMessage');
+
+        // Modal de Adicionar/Editar
+        const addEditModal = document.getElementById('addEditModal');
+        const modalTitle = document.getElementById('modalTitle');
+        const addEditForm = document.getElementById('addEditForm');
+        const hymnNameInput = document.getElementById('hymnName');
+        const hymnToneInput = document.getElementById('hymnTone');
+        const addEditCancelButton = document.getElementById('addEditCancelButton');
+
+        // Modal de Confirmação
+        const confirmModal = document.getElementById('confirmModal');
+        const confirmMessage = document.getElementById('confirmMessage');
+        const confirmButton = document.getElementById('confirmButton');
+        const confirmCancelButton = document.getElementById('confirmCancelButton');
+
+        // --- Funções Auxiliares ---
+
+        /**
+         * Normaliza uma string: remove acentos, e converte para minúsculas.
+         * @param {string} str A string para normalizar.
+         * @returns {string} A string normalizada.
+         */
+        function normalizeString(str) {
+            if (!str) return '';
+            return str
+                .toLowerCase()
+                .normalize("NFD")
+                .replace(/[\u0300-\u036f]/g, "");
+        }
+
+        /**
+         * Renderiza a lista de hinos na tela.
+         * @param {Array} hymns - O array de hinos para renderizar.
+         */
+        function renderHymns(hymns) {
+            hymnList.innerHTML = ''; // Limpa a lista
+            
+            if (hymns.length === 0) {
+                loadingMessage.textContent = 'Nenhum hino encontrado.';
+                loadingMessage.style.display = 'block';
+                hymnList.appendChild(loadingMessage);
+                return;
+            }
+
+            hymns.forEach(hymn => {
+                const hymnElement = document.createElement('div');
+                hymnElement.className = 'flex items-center justify-between p-4 bg-gray-50 rounded-lg shadow-sm border border-gray-200';
+                
+                hymnElement.innerHTML = `
+                    <div>
+                        <p class="text-lg font-semibold text-gray-900">${hymn.name}</p>
+                        <p class="text-md text-blue-700 font-medium">${hymn.tone}</p>
+                    </div>
+                    <div class="flex gap-2">
+                        <button data-id="${hymn.id}" class="edit-btn p-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                <path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" />
+                                <path fill-rule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clip-rule="evenodd" />
+                            </svg>
+                        </button>
+                        <button data-id="${hymn.id}" class="delete-btn p-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" />
+                            </svg>
+                        </button>
+                    </div>
+                `;
+
+                // Adiciona eventos aos botões de editar e excluir
+                hymnElement.querySelector('.edit-btn').addEventListener('click', () => {
+                    openConfirmModal('edit', hymn);
+                });
+                hymnElement.querySelector('.delete-btn').addEventListener('click', () => {
+                    openConfirmModal('delete', hymn);
+                });
+
+                hymnList.appendChild(hymnElement);
+            });
+        }
+
+        /**
+         * Filtra e renderiza os hinos com base na busca.
+         */
+        function handleSearch() {
+            const searchTerm = normalizeString(searchBox.value);
+            if (searchTerm === '') {
+                renderHymns(allHymns); // Mostra todos se a busca está vazia
+            } else {
+                const filteredHymns = allHymns.filter(hymn => 
+                    hymn.normalizedName.includes(searchTerm)
+                );
+                renderHymns(filteredHymns);
+            }
+        }
+        
+        // --- Funções dos Modais ---
+
+        function openAddModal() {
+            currentHymn = null; // Limpa o hino atual
+            modalTitle.textContent = 'Adicionar Novo Hino';
+            addEditForm.reset(); // Limpa o formulário
+            addEditModal.classList.remove('hidden');
+            hymnNameInput.focus();
+        }
+
+        function openEditModal(hymn) {
+            currentHymn = hymn;
+            modalTitle.textContent = 'Editar Hino';
+            hymnNameInput.value = hymn.name;
+            hymnToneInput.value = hymn.tone;
+            addEditModal.classList.remove('hidden');
+            hymnNameInput.focus();
+        }
+
+        function closeAddEditModal() {
+            addEditModal.classList.add('hidden');
+            currentHymn = null;
+        }
+
+        function openConfirmModal(action, hymn) {
+            currentAction = action;
+            currentHymn = hymn; // Guarda o hino para a ação
+            
+            if (action === 'edit') {
+                confirmMessage.textContent = `Tem certeza que deseja alterar o hino "${hymn.name}"?`;
+                confirmButton.className = 'px-5 py-2 bg-yellow-500 text-white rounded-lg font-medium hover:bg-yellow-600 transition';
+                confirmButton.textContent = 'Alterar';
+            } else if (action === 'delete') {
+                confirmMessage.textContent = `Tem certeza que deseja apagar o hino "${hymn.name}"? Esta ação não pode ser desfeita.`;
+                confirmButton.className = 'px-5 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition';
+                confirmButton.textContent = 'Apagar';
+            }
+            
+            confirmModal.classList.remove('hidden');
+        }
+
+        function closeConfirmModal() {
+            confirmModal.classList.add('hidden');
+            currentAction = null;
+            currentHymn = null;
+        }
+
+        // --- Lógica do Firebase (CRUD) ---
+
+        /**
+         * Carrega os hinos do Firestore e escuta por mudanças.
+         */
+        function loadHymns() {
+            if (!hymnsCollectionRef) return;
+
+            // onSnapshot escuta em tempo real
+            onSnapshot(hymnsCollectionRef, (snapshot) => {
+                allHymns = snapshot.docs.map(doc => ({
+                    id: doc.id,
+                    ...doc.data()
+                }));
+                
+                // Ordena por nome
+                allHymns.sort((a, b) => a.name.localeCompare(b.name));
+                
+                handleSearch(); // Re-renderiza a lista com o filtro atual
+            }, (error) => {
+                console.error("Erro ao carregar hinos: ", error);
+                loadingMessage.textContent = 'Erro ao carregar hinos.';
+            });
+        }
+
+        /**
+         * Salva ou atualiza um hino no formulário.
+         */
+        async function handleFormSubmit(e) {
+            e.preventDefault();
+            
+            const name = hymnNameInput.value.trim();
+            const tone = hymnToneInput.value.trim();
+            
+            if (!name || !tone) {
+                console.warn("Nome e Tonalidade são obrigatórios.");
+                return;
+            }
+
+            const hymnData = {
+                name: name,
+                tone: tone,
+                normalizedName: normalizeString(name) // Guarda o nome normalizado para busca
+            };
+
+            try {
+                if (currentHymn) {
+                    // Atualizando (Update)
+                    const docRef = doc(db, hymnsCollectionRef.path, currentHymn.id);
+                    await setDoc(docRef, hymnData);
+                } else {
+                    // Criando (Create)
+                    await addDoc(hymnsCollectionRef, hymnData);
+                }
+                closeAddEditModal();
+            } catch (error) {
+                console.error("Erro ao salvar hino: ", error);
+            }
+        }
+
+        /**
+         * Executa a ação confirmada (Editar ou Excluir).
+         */
+        async function handleConfirmAction() {
+            if (!currentHymn || !currentAction) return;
+
+            if (currentAction === 'edit') {
+                closeConfirmModal();
+                openEditModal(currentHymn); // Abre o modal de edição
+            } 
+            else if (currentAction === 'delete') {
+                try {
+                    const docRef = doc(db, hymnsCollectionRef.path, currentHymn.id);
+                    await deleteDoc(docRef);
+                } catch (error) {
+                    console.error("Erro ao apagar hino: ", error);
+                }
+                closeConfirmModal();
+            }
+        }
+        
+        // --- Inicialização ---
+
+        // Adiciona os event listeners
+        searchBox.addEventListener('input', handleSearch);
+        addButton.addEventListener('click', openAddModal);
+        addEditForm.addEventListener('submit', handleFormSubmit);
+        addEditCancelButton.addEventListener('click', closeAddEditModal);
+        
+        confirmButton.addEventListener('click', handleConfirmAction);
+        confirmCancelButton.addEventListener('click', closeConfirmModal);
+
+        // Inicia a autenticação e carrega os dados
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                console.log("Usuário autenticado:", user.uid);
+                userId = user.uid;
+                // Define o caminho da coleção privada do usuário
+                hymnsCollectionRef = collection(db, `artifacts/${appId}/users/${userId}/hymns`);
+                loadHymns(); // Carrega os dados agora que temos o ID do usuário
+            } else {
+                console.log("Usuário não autenticado, tentando login...");
+                try {
+                    // Tenta login com token customizado ou anônimo
+                    if (initialAuthToken) {
+                        await signInWithCustomToken(auth, initialAuthToken);
+                    } else {
+                        await signInAnonymously(auth);
+                    }
+                } catch (error) {
+                    console.error("Erro na autenticação:", error);
+                    loadingMessage.textContent = "Erro de autenticação.";
+                }
+            }
+        });
+
+    </script>
+</body>
+</html>
