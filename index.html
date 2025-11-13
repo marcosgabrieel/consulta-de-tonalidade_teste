@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Consulta de Tonalidade - Jovens</title>
-    <!-- Carrega o Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         /* Adiciona uma transição suave para os modais */
@@ -20,7 +19,6 @@
 </head>
 <body class="bg-gray-100 font-sans antialiased">
 
-    <!-- Container Principal -->
     <div class="container mx-auto max-w-3xl p-4 md:p-8">
         
         <header class="text-center mb-8">
@@ -31,7 +29,6 @@
 
         <main class="bg-white p-6 md:p-8 rounded-lg shadow-lg">
             
-            <!-- Área de Busca e Adição -->
             <div class="flex flex-col sm:flex-row gap-4 mb-6">
                 <input 
                     type="search" 
@@ -47,16 +44,13 @@
                 </button>
             </div>
 
-            <!-- Lista de Hinos -->
             <div id="hymnList" class="space-y-4">
-                <!-- Hinos serão injetados aqui pelo JavaScript -->
                 <p id="loadingMessage" class="text-center text-gray-500">Carregando hinos...</p>
             </div>
 
         </main>
     </div>
 
-    <!-- Modal: Adicionar/Editar Hino -->
     <div id="addEditModal" class="modal hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
         <div class="bg-white p-6 rounded-lg shadow-xl w-full max-w-md">
             <h2 id="modalTitle" class="text-2xl font-bold mb-6 text-gray-800">Adicionar Novo Hino</h2>
@@ -99,7 +93,6 @@
         </div>
     </div>
 
-    <!-- Modal: Confirmação (Genérico para Editar e Excluir) -->
     <div id="confirmModal" class="modal hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-40">
         <div class="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm">
             <h2 class="text-xl font-bold mb-4 text-gray-800">Confirmação</h2>
@@ -121,72 +114,41 @@
         </div>
     </div>
 
-    <!-- Firebase Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { 
-            getAuth, 
-            signInAnonymously, 
-            signInWithCustomToken, 
-            onAuthStateChanged 
-        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { 
-            getFirestore, 
-            doc, 
-            collection, 
-            addDoc, 
-            setDoc, 
-            deleteDoc, 
-            onSnapshot,
-            setLogLevel
-        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // --- Configuração do Firebase ---
+        // --- Configuração do Supabase (Chaves Injetadas) ---
+        const SUPABASE_URL = 'https://ihmtqpjaqnfsqghwkdmh.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlobXRxcGphcW5mc3FnaHdrZG1oIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMwMDEwMDAsImV4cCI6MjA3ODU3NzAwMH0.tAqd4-gpY6WInupdQiAAxSg7TFyZxdKIcRcaLSmJN0Q';
+        // FIM DA CONFIGURAÇÃO
+
+        // Inicializa o Supabase
+        const supabase = Supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
         
-        // Pega a configuração do Firebase e o ID do App do ambiente
-        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        // Nome da tabela que você criou
+        const TABLE_NAME = 'hinos'; 
 
-        // Inicializa o Firebase
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
-        const db = getFirestore(app);
-        setLogLevel('Debug'); // Habilita logs do Firestore no console
-
-        let userId = null;
-        let hymnsCollectionRef = null;
-        let allHymns = []; // Array local para guardar todos os hinos
-        let currentHymn = null; // Guarda o hino a ser editado/excluído
-        let currentAction = null; // 'edit' ou 'delete'
+        let allHymns = [];
+        let currentHymn = null; 
+        let currentAction = null; 
 
         // --- Referências do DOM ---
         const searchBox = document.getElementById('searchBox');
         const addButton = document.getElementById('addButton');
         const hymnList = document.getElementById('hymnList');
         const loadingMessage = document.getElementById('loadingMessage');
-
-        // Modal de Adicionar/Editar
         const addEditModal = document.getElementById('addEditModal');
         const modalTitle = document.getElementById('modalTitle');
         const addEditForm = document.getElementById('addEditForm');
         const hymnNameInput = document.getElementById('hymnName');
         const hymnToneInput = document.getElementById('hymnTone');
         const addEditCancelButton = document.getElementById('addEditCancelButton');
-
-        // Modal de Confirmação
         const confirmModal = document.getElementById('confirmModal');
         const confirmMessage = document.getElementById('confirmMessage');
         const confirmButton = document.getElementById('confirmButton');
         const confirmCancelButton = document.getElementById('confirmCancelButton');
 
-        // --- Funções Auxiliares ---
-
-        /**
-         * Normaliza uma string: remove acentos, e converte para minúsculas.
-         * @param {string} str A string para normalizar.
-         * @returns {string} A string normalizada.
-         */
+        // --- Funções Auxiliares (mantidas) ---
         function normalizeString(str) {
             if (!str) return '';
             return str
@@ -195,12 +157,8 @@
                 .replace(/[\u0300-\u036f]/g, "");
         }
 
-        /**
-         * Renderiza a lista de hinos na tela.
-         * @param {Array} hymns - O array de hinos para renderizar.
-         */
         function renderHymns(hymns) {
-            hymnList.innerHTML = ''; // Limpa a lista
+            hymnList.innerHTML = ''; 
             
             if (hymns.length === 0) {
                 loadingMessage.textContent = 'Nenhum hino encontrado.';
@@ -208,6 +166,9 @@
                 hymnList.appendChild(loadingMessage);
                 return;
             }
+
+            // Garante que a mensagem de carregamento não está visível
+            loadingMessage.style.display = 'none';
 
             hymns.forEach(hymn => {
                 const hymnElement = document.createElement('div');
@@ -233,7 +194,6 @@
                     </div>
                 `;
 
-                // Adiciona eventos aos botões de editar e excluir
                 hymnElement.querySelector('.edit-btn').addEventListener('click', () => {
                     openConfirmModal('edit', hymn);
                 });
@@ -245,27 +205,23 @@
             });
         }
 
-        /**
-         * Filtra e renderiza os hinos com base na busca.
-         */
         function handleSearch() {
             const searchTerm = normalizeString(searchBox.value);
+            // O filtro é feito localmente para simplicidade
             if (searchTerm === '') {
-                renderHymns(allHymns); // Mostra todos se a busca está vazia
+                renderHymns(allHymns); 
             } else {
                 const filteredHymns = allHymns.filter(hymn => 
-                    hymn.normalizedName.includes(searchTerm)
+                    normalizeString(hymn.name).includes(searchTerm) || normalizeString(hymn.tone).includes(searchTerm)
                 );
                 renderHymns(filteredHymns);
             }
         }
         
-        // --- Funções dos Modais ---
-
         function openAddModal() {
-            currentHymn = null; // Limpa o hino atual
+            currentHymn = null; 
             modalTitle.textContent = 'Adicionar Novo Hino';
-            addEditForm.reset(); // Limpa o formulário
+            addEditForm.reset(); 
             addEditModal.classList.remove('hidden');
             hymnNameInput.focus();
         }
@@ -286,7 +242,7 @@
 
         function openConfirmModal(action, hymn) {
             currentAction = action;
-            currentHymn = hymn; // Guarda o hino para a ação
+            currentHymn = hymn; 
             
             if (action === 'edit') {
                 confirmMessage.textContent = `Tem certeza que deseja alterar o hino "${hymn.name}"?`;
@@ -307,33 +263,54 @@
             currentHymn = null;
         }
 
-        // --- Lógica do Firebase (CRUD) ---
+        // --- Lógica do Supabase (CRUD) ---
 
         /**
-         * Carrega os hinos do Firestore e escuta por mudanças.
+         * Carrega os hinos do Supabase e escuta por mudanças.
          */
-        function loadHymns() {
-            if (!hymnsCollectionRef) return;
+        function loadHymnsAndListen() {
+            // Escuta por mudanças (INSERT, UPDATE, DELETE) na tabela 'hinos'
+            supabase
+                .channel('hinos_changes')
+                .on('postgres_changes', { event: '*', schema: 'public', table: TABLE_NAME }, () => {
+                    // Quando algo muda, recarrega a lista completa
+                    fetchHymns(); 
+                })
+                .subscribe();
 
-            // onSnapshot escuta em tempo real
-            onSnapshot(hymnsCollectionRef, (snapshot) => {
-                allHymns = snapshot.docs.map(doc => ({
-                    id: doc.id,
-                    ...doc.data()
-                }));
-                
-                // Ordena por nome
-                allHymns.sort((a, b) => a.name.localeCompare(b.name));
-                
-                handleSearch(); // Re-renderiza a lista com o filtro atual
-            }, (error) => {
-                console.error("Erro ao carregar hinos: ", error);
+            // Carrega os hinos inicialmente
+            fetchHymns();
+        }
+        
+        /**
+         * Busca a lista completa de hinos do Supabase (simples!)
+         */
+        async function fetchHymns() {
+            loadingMessage.textContent = 'Carregando hinos...';
+            loadingMessage.style.display = 'block';
+
+            const { data, error } = await supabase
+                .from(TABLE_NAME)
+                .select('id, name, tone') 
+                .order('name', { ascending: true }); 
+
+            if (error) {
+                console.error('Erro ao buscar hinos:', error);
                 loadingMessage.textContent = 'Erro ao carregar hinos.';
-            });
+                return;
+            }
+
+            allHymns = data.map(hymn => ({
+                id: hymn.id,
+                name: hymn.name,
+                tone: hymn.tone
+            }));
+            
+            handleSearch(); 
         }
 
         /**
-         * Salva ou atualiza um hino no formulário.
+         * Salva ou atualiza um hino no Supabase.
          */
         async function handleFormSubmit(e) {
             e.preventDefault();
@@ -341,26 +318,27 @@
             const name = hymnNameInput.value.trim();
             const tone = hymnToneInput.value.trim();
             
-            if (!name || !tone) {
-                console.warn("Nome e Tonalidade são obrigatórios.");
-                return;
-            }
+            if (!name || !tone) return;
 
-            const hymnData = {
-                name: name,
-                tone: tone,
-                normalizedName: normalizeString(name) // Guarda o nome normalizado para busca
-            };
+            const hymnData = { name, tone };
 
             try {
+                let error;
                 if (currentHymn) {
                     // Atualizando (Update)
-                    const docRef = doc(db, hymnsCollectionRef.path, currentHymn.id);
-                    await setDoc(docRef, hymnData);
+                    ({ error } = await supabase
+                        .from(TABLE_NAME)
+                        .update(hymnData)
+                        .eq('id', currentHymn.id));
                 } else {
                     // Criando (Create)
-                    await addDoc(hymnsCollectionRef, hymnData);
+                    ({ error } = await supabase
+                        .from(TABLE_NAME)
+                        .insert([hymnData]));
                 }
+
+                if (error) throw error;
+                
                 closeAddEditModal();
             } catch (error) {
                 console.error("Erro ao salvar hino: ", error);
@@ -375,12 +353,16 @@
 
             if (currentAction === 'edit') {
                 closeConfirmModal();
-                openEditModal(currentHymn); // Abre o modal de edição
+                openEditModal(currentHymn); 
             } 
             else if (currentAction === 'delete') {
                 try {
-                    const docRef = doc(db, hymnsCollectionRef.path, currentHymn.id);
-                    await deleteDoc(docRef);
+                    const { error } = await supabase
+                        .from(TABLE_NAME)
+                        .delete()
+                        .eq('id', currentHymn.id);
+
+                    if (error) throw error;
                 } catch (error) {
                     console.error("Erro ao apagar hino: ", error);
                 }
@@ -390,38 +372,14 @@
         
         // --- Inicialização ---
 
-        // Adiciona os event listeners
         searchBox.addEventListener('input', handleSearch);
         addButton.addEventListener('click', openAddModal);
         addEditForm.addEventListener('submit', handleFormSubmit);
         addEditCancelButton.addEventListener('click', closeAddEditModal);
-        
         confirmButton.addEventListener('click', handleConfirmAction);
         confirmCancelButton.addEventListener('click', closeConfirmModal);
 
-        // Inicia a autenticação e carrega os dados
-        onAuthStateChanged(auth, async (user) => {
-            if (user) {
-                console.log("Usuário autenticado:", user.uid);
-                userId = user.uid;
-                // Define o caminho da coleção privada do usuário
-                hymnsCollectionRef = collection(db, `artifacts/${appId}/users/${userId}/hymns`);
-                loadHymns(); // Carrega os dados agora que temos o ID do usuário
-            } else {
-                console.log("Usuário não autenticado, tentando login...");
-                try {
-                    // Tenta login com token customizado ou anônimo
-                    if (initialAuthToken) {
-                        await signInWithCustomToken(auth, initialAuthToken);
-                    } else {
-                        await signInAnonymously(auth);
-                    }
-                } catch (error) {
-                    console.error("Erro na autenticação:", error);
-                    loadingMessage.textContent = "Erro de autenticação.";
-                }
-            }
-        });
+        loadHymnsAndListen(); 
 
     </script>
 </body>
